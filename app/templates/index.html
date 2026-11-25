@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f1">
+  <meta name="description" content="Track 3D orientation, compare rotation order, detect drift and repair a rotation matrix with Gram–Schmidt.">
+  <title>Orientation Lab — device attitude tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Orientation Lab home">
+        <svg class="brand-mark" viewBox="0 0 44 44" role="img" aria-label="three-axis reticle"><circle cx="22" cy="22" r="16"/><path d="M22 2v40M2 22h40M7.9 7.9l28.2 28.2M36.1 7.9 7.9 36.1"/><circle class="brand-dot" cx="32.5" cy="12" r="3.5"/></svg>
+        <span class="brand-copy"><b>AXIS <i>/</i> LAB</b><small>ORIENTATION INSTRUMENTS</small></span>
+      </a>
+      <div class="top-meta"><span class="top-meta-label">FIELD NOTE 028</span><span class="meta-divider"></span><span class="mono" id="clock">LOCAL · —</span></div>
+      <button class="icon-button help-button" id="help-button" aria-label="About this instrument">i</button>
+    </header>
+
+    <main>
+      <section class="intro-row">
+        <div>
+          <div class="eyebrow"><span class="eyebrow-line"></span> KINEMATICS / 03 AXIS ROTATION</div>
+          <h1>Orientation <em>lab.</em></h1>
+          <p class="intro-copy">A live instrument for composing rotation, spotting drift, and finding level again.</p>
+        </div>
+        <div class="intro-right">
+          <div class="live-indicator"><span class="pulse-dot"></span><span id="run-status">STANDBY</span></div>
+          <div class="intro-note"><span class="mono">FRAME 01</span><span>Right-handed · column vectors</span></div>
+        </div>
+      </section>
+
+      <section class="workbench" aria-label="Orientation workbench">
+        <article class="panel model-panel">
+          <div class="panel-head model-head">
+            <div><span class="section-index">01 / ATTITUDE</span><h2>Live orientation</h2></div>
+            <div class="head-controls">
+              <div class="segmented" role="group" aria-label="Model type"><button class="segment active" data-model="phone">PHONE</button><button class="segment" data-model="cube">CUBE</button></div>
+              <button class="icon-button reset-button" id="reset-button" title="Reset orientation" aria-label="Reset orientation">↺</button>
+            </div>
+          </div>
+          <div class="model-stage" id="model-stage">
+            <div class="stage-label stage-label-top"><span>WORLD FRAME</span><span class="mono" id="posture-label">POSTURE · PORTRAIT</span><span>+Y ↑</span></div>
+            <div class="stage-crosshair"></div>
+            <canvas id="model-canvas" aria-label="Interactive three-dimensional device model"></canvas>
+            <div class="axis-label axis-x">X <b>·</b> ROLL</div><div class="axis-label axis-y">Y <b>·</b> PITCH</div><div class="axis-label axis-z">Z <b>·</b> YAW</div>
+            <div class="stage-label stage-label-bottom"><span class="mono" id="step-label">STEP 000</span><span class="mono" id="imu-source-label">SIMULATED IMU · 60 HZ</span></div>
+            <div class="reticle"><span></span><i></i></div>
+          </div>
+          <div class="model-footer">
+            <div class="footer-readout"><span class="readout-label">COMPOSITION</span><strong id="composition-label">XYZ · Q ← Q Rₓ Rᵧ Rz</strong></div>
+            <div class="footer-readout"><span class="readout-label">STREAM BUFFER</span><strong><span class="teal-dot"></span><span id="buffer-count">00 / 60</span></strong></div>
+            <div class="footer-readout"><span class="readout-label">SESSION</span><strong id="session-status">NOT SAVING</strong></div>
+          </div>
+        </article>
+
+        <aside class="side-stack">
+          <article class="panel order-panel">
+            <div class="panel-head compact-head"><div><span class="section-index">02 / NON-COMMUTATIVE</span><h2>Order changes everything.</h2></div><span class="chip">LIVE COMPARE</span></div>
+            <p class="panel-copy">Same angles, different products. Choose a rotation order below.</p>
+            <div class="angle-inputs">
+              <label><span class="axis-tag x-tag">X</span><input id="angle-x" type="number" value="28" step="1" aria-label="X rotation in degrees"><small>°</small></label>
+              <label><span class="axis-tag y-tag">Y</span><input id="angle-y" type="number" value="42" step="1" aria-label="Y rotation in degrees"><small>°</small></label>
+              <label><span class="axis-tag z-tag">Z</span><input id="angle-z" type="number" value="65" step="1" aria-label="Z rotation in degrees"><small>°</small></label>
+            </div>
+            <div class="compare-row">
+              <div class="compare-result"><span class="order-tag">XYZ</span><span class="mini-matrix" id="matrix-xyz">—</span></div>
+              <div class="compare-result"><span class="order-tag">ZYX</span><span class="mini-matrix" id="matrix-zyx">—</span></div>
+            </div>
+            <div class="difference-line"><span>FROBENIUS DISTANCE</span><strong id="order-difference">—</strong></div>
+            <div class="order-actions"><select id="order-select" aria-label="Current composition order"><option>XYZ</option><option>XZY</option><option>YXZ</option><option>YZX</option><option>ZXY</option><option>ZYX</option></select><button class="button button-dark" id="apply-button">Apply step <span>↗</span></button></div>
+          </article>
+
+          <article class="panel drift-panel" id="drift-panel">
+            <div class="panel-head compact-head"><div><span class="section-index">03 / ORTHOGONALITY CHECK</span><h2>Keep the frame square.</h2></div><span class="drift-state" id="drift-state"><i></i> NOMINAL</span></div>
+            <div class="health-row"><div><span class="micro-label">‖QᵀQ − I‖</span><strong class="metric-value" id="orth-error">0.000000</strong></div><div class="metric-divider"></div><div><span class="micro-label">DETERMINANT</span><strong class="metric-value" id="det-value">1.000000</strong></div></div>
+            <div class="matrix-block"><div class="matrix-name">ORIENTATION MATRIX <span class="mono">Q · 3 × 3</span></div><div class="matrix-grid" id="matrix-grid"></div></div>
+            <div class="drift-actions"><button class="button button-outline" id="repair-button">Re-orthonormalise <span>↻</span></button><button class="text-button" id="stress-button">Run precision stress <span>→</span></button></div>
+            <p class="micro-note">Stress mode rounds each update to 6 decimal places to reveal finite-precision drift.</p>
+          </article>
+        </aside>
+      </section>
+
+      <section class="lower-grid">
+        <article class="panel stream-panel">
+          <div class="panel-head"><div><span class="section-index">04 / SENSOR LOG</span><h2>Feed the gyroscope.</h2></div><span class="stream-count mono" id="log-count">0 STEPS</span></div>
+          <div class="iphone-bridge" id="iphone-bridge">
+            <div class="bridge-top">
+              <div class="bridge-status"><span class="bridge-dot" id="bridge-dot"></span><span class="mono" id="bridge-state">IPHONE LISTENING</span></div>
+              <div class="bridge-actions">
+                <button class="text-button" id="stream-toggle-button" type="button">Pause stream</button>
+                <button class="session-open" id="copy-url-button" type="button">COPY URL</button>
+              </div>
+            </div>
+            <div class="bridge-url-row">
+              <span class="micro-label">SENSORLOG HTTP POST URL</span>
+              <code class="bridge-url mono" id="ingest-url">http://localhost:3000/api/sensorlog</code>
+            </div>
+            <div class="bridge-meta">
+              <span class="micro-note">In iOS <b>SensorLog</b>: enable <b>HTTP POST (JSON)</b> &amp; <b>Gyro / Motion</b>, then paste the URL above on the same Wi‑Fi.</span>
+              <span class="mono bridge-telemetry" id="live-angles-readout">Δ —</span>
+            </div>
+          </div>
+          <div class="stream-tools"><button class="button button-tint" id="demo-button"><span class="play-icon">▶</span> Play sample log</button><button class="text-button" id="stop-button" disabled>Finish session</button><span class="tools-spacer"></span><span class="mono tools-hint">x, y, z · DEGREES / STEP</span></div>
+          <label class="log-label" for="log-input">PASTE LOG · ONE STEP PER LINE</label>
+          <textarea id="log-input" spellcheck="false" placeholder="x, y, z&#10;15, -8, 22&#10;-4, 12, 9&#10;7, 3, -18"></textarea>
+          <div class="stream-bottom"><span class="micro-note">Commas or spaces accepted · blank lines ignored</span><button class="button button-dark" id="load-log-button">Run log <span>↗</span></button></div>
+          <div class="activity-line"><div class="activity-head"><span class="micro-label">RECENT SENSOR ACTIVITY</span><span class="mono" id="activity-range">WINDOW / 60</span></div><div class="activity-bars" id="activity-bars" aria-label="Recent sensor activity visualization"></div></div>
+        </article>
+
+        <article class="panel sessions-panel">
+          <div class="panel-head"><div><span class="section-index">05 / ARCHIVE</span><h2>Saved sessions.</h2></div><button class="icon-button" id="refresh-sessions" title="Refresh sessions" aria-label="Refresh saved sessions">⟳</button></div>
+          <div class="session-list" id="session-list"><div class="empty-sessions">No runs archived yet.<br><span>Apply a rotation to start a session.</span></div></div>
+          <div class="plot-wrap" id="plot-wrap"><div class="plot-placeholder">DRIFT TRACE WILL APPEAR HERE</div></div>
+          <div class="archive-caption"><span class="micro-label">ORTHOGONALITY OVER TIME</span><span class="mono" id="plot-caption">—</span></div>
+        </article>
+      </section>
+      <footer class="page-footer"><span>ORIENTATION IS A PRODUCT OF ITS STEPS.</span><span>BUILT FROM ROTATIONS · CHECKED WITH GRAM–SCHMIDT</span><span class="mono">AX / 028</span></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="help-dialog"><div class="dialog-top"><span class="section-index">FIELD GUIDE / 028</span><button class="icon-button" id="close-help" aria-label="Close">×</button></div><h2>Every turn<br>leaves a trace.</h2><p>This instrument composes right-handed X, Y and Z rotations as 3×3 matrices. Order matters: XYZ computes Q ← Q Rₓ Rᵧ Rz, while ZYX computes Q ← Q Rz Rᵧ Rₓ.</p><p>Orthogonality drift is the Frobenius distance ‖QᵀQ − I‖. Precision stress rounds each update to six decimals; Gram–Schmidt rebuilds an orthonormal right-handed frame from the columns.</p><button class="button button-dark" id="close-help-bottom">Back to the workbench <span>↗</span></button></dialog>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
